@@ -1,0 +1,132 @@
+zImage is used
+
+partition sd card
+/dev/sdc1	2048	526335	FAT
+/dev/sdc2	526336	8054783	EXT4
+
+https://community.nxp.com/docs/DOC-95017
+https://community.nxp.com/docs/DOC-95044
+
+UBOOT ENV VARIABLES
+> setenv mmcroot /dev/mmcblk1p2 rootwait rw
+> savenv
+
+--------------------------------------------------------------------------------
+
+===============
+TO SETUP UBOOT
+===============
+
+Get U-Boot source
+------------------
+$ git clone git://git.denx.de/u-boot.git
+
+
+Compile U-Boot for target
+--------------------------
+$ cd u-boot
+$ export CROSS_COMPILE=arm-linux-gnueabihf-
+$ make mx6qsabresd_config
+$ make
+
+
+Copy to MBR section of SD card - specify SD Card, not a partition in SD Card
+-----------------------------------------------------------------------------
+Using SPL & u-boot.img
+----------------------
+$ sudo dd if=SPL of=/dev/sdc bs=1k seek=1; sync
+$ sudo dd if=u-boot.img of=/dev/sdc bs=1k seek=69; sync
+
+Using u-boot.imx
+----------------
+$ dd if=u-boot.imx of=/dev/<your-sd-card> bs=1k seek=1; sync
+
+
+===================================
+TO COMPILE LINUX KERNEL FOR TARGET
+===================================
+
+Get Linux source
+-----------------
+$ git clone --depth 1 --branch v4.10-rc4 git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git linux-4.10-rc4
+
+
+Compile Linux kernel for target
+--------------------------------
+$ cd linux
+$ export ARCH=arm
+#sudo apt install arm cross compiler if needed 'gcc-arm-linux-gnueabihf'
+$ export CROSS_COMPILE=arm-linux-gnueabihf-
+$ make imx_v6_v7_defconfig
+$ make
+#OPTIONAL - works with zImage also - depends on uboot environment variables
+$ make uImage LOADADDR=0x10008000
+
+Generated files are in 	/arch/arm/boot/uImage and /arch/arm/boot/dts/imx6q-sabresd.dtb
+
+
+Setting up SD-Card
+-------------------
+SD CARD SAMPLE LAYOUT
+----------------------
+Device    Boot      Start         End      Blocks   Id  System
+
+/dev/sdc1            2048     8054783     4026368    c  W95 FAT32 (LBA)
+
+
+You can format the FAT partition, mount, copy and unmount with
+---------------------------------------------------------------
+$ mkfs.vfat /dev/<your-sd-card-first-partition>
+$ mount /dev/<your-sd-card-first-partition> /mnt
+$ cp arch/arm/boot/zImage arch/arm/boot/dts/imx6q-sabresd.dtb /mnt/
+$ umount /mnt
+
+Insert SD-Card into target and boot it. Once the kernel loads successfully, tux appears four times on the screen, following by a blinking prompt.
+The kernel is waiting for the root file system.
+
+
+====================================
+TO SET UP A DEBIAN ROOT FILE SYSTEM
+====================================
+
+Install following packages
+--------------------------
+$ sudo apt install binfmt-support qemu-user-static debootstrap
+
+
+Setting up SD-Card
+-------------------
+SD CARD SAMPLE LAYOUT
+----------------------
+Device    Boot      Start         End      Blocks   Id  System
+
+/dev/sdc1            2048      526335      262144    c  W95 FAT32 (LBA)
+
+/dev/sdc2          526336     8054783     3764224   83  Linux
+
+
+Setting up root file system on ext4 partition
+----------------------------------------------
+$ sudo mount /dev/sdc2 /mnt
+$ sudo debootstrap --foreign --arch=armhf testing /mnt
+$ sudo cp /usr/bin/qemu-arm-static /mnt/usr/bin
+$ sudo chroot /mnt /debootstrap/debootstrap --second-stage
+
+
+Some tweaking to rootfs
+-----------------------
+Remove root password hash in /mnt/etc/shadow. It should look similar to,
+root::15880:0:99999:7:::
+
+Also, we can add the following line in /mnt/etc/inittab to obtain a login prompt on the UART
+T0:23:respawn:/sbin/getty -L ttymxc0 115200 vt100
+
+
+Tweaking to U-Boot environment variables (optional)
+---------------------------------------------------
+> setenv mmcroot /dev/mmcblk0p2 rootwait rw
+> saveenv
+
+Insert Sd-Card on target and boot the device. Tux appears four times along with the blinking promt, followed by prompt for login of root user.
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------
